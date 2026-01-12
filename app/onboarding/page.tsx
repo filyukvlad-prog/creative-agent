@@ -74,7 +74,7 @@ export default function OnboardingPage() {
         <div>auth: {debug.auth}</div>
         <div>main button click: {debug.click}</div>
       </div>
-
+<p style={{ opacity: 0.7, fontSize: 12 }}>build: v-onboarding-20260112-1</p>
       <p style={{ margin: 0 }}>Якщо ти у Telegram, знизу має з’явитись кнопка “Почати”.</p>
       <p style={{ margin: 0, opacity: 0.8 }}>Кнопки всередині сторінки ігноруємо.</p>
     </main>
