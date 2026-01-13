@@ -1,121 +1,259 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 
-type DebugState = {
-  hasTelegram: boolean;
-  hasWebApp: boolean;
-  initDataLen: number;
-  auth: string;
-  click: string;
-};
+type Status = "idle" | "not-telegram" | "authing" | "ready" | "error";
 
 export default function OnboardingPage() {
-  const [debug, setDebug] = useState<DebugState>({
-    hasTelegram: false,
-    hasWebApp: false,
-    initDataLen: 0,
-    auth: "not started",
-    click: "not clicked",
-  });
+  const [status, setStatus] = useState<Status>("idle");
+
+  const webApp = useMemo(() => (typeof window !== "undefined" ? (window as any).Telegram?.WebApp : null), []);
 
   useEffect(() => {
-    const tg = (window as any).Telegram;
-    const webApp = tg?.WebApp;
+    const tg = (window as any).Telegram?.WebApp;
 
-    setDebug((d) => ({
-      ...d,
-      hasTelegram: !!tg,
-      hasWebApp: !!webApp,
-      initDataLen: (webApp?.initData?.length || 0),
-    }));
+    if (!tg) {
+      setStatus("not-telegram");
+      return;
+    }
 
-    if (!webApp) return;
+    tg.ready();
+    tg.expand?.();
 
-    webApp.ready();
-    if (typeof webApp.expand === "function") webApp.expand();
+    // MainButton
+    tg.MainButton?.setText?.("Почати");
+    tg.MainButton?.show?.();
+    tg.MainButton?.disable?.();
 
-    // Якщо initData порожній — значить відкрито не через правильний Telegram WebApp контекст
-    // (тут ми лише показуємо це в debug; auth тоді, звісно, не спрацює)
-    setDebug((d) => ({ ...d, auth: "calling /api/auth/telegram..." }));
+    setStatus("authing");
 
     fetch("/api/auth/telegram", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ initData: webApp.initData }),
+      body: JSON.stringify({ initData: tg.initData }),
     })
       .then(async (r) => {
         const data = await r.json().catch(() => ({}));
-        setDebug((d) => ({
-          ...d,
-          auth: `response: ${r.status} ${JSON.stringify(data)}`,
-        }));
+        if (!r.ok || !data?.ok) throw new Error(data?.error || "Auth failed");
+
+        setStatus("ready");
+        tg.MainButton?.enable?.();
       })
-      .catch((e) => {
-        setDebug((d) => ({
-          ...d,
-          auth: `error: ${String(e)}`,
-        }));
+      .catch(() => {
+        setStatus("error");
+        tg.MainButton?.hide?.();
       });
 
     const onClick = () => {
-      setDebug((d) => ({ ...d, click: "clicked" }));
-      try {
-        webApp.MainButton?.disable?.();
-      } catch {}
-      // Абсолютний URL — стабільніше на iOS Telegram
+      tg.MainButton?.disable?.();
       window.location.href = `${window.location.origin}/dashboard`;
     };
 
-    // Telegram MainButton (працює тільки всередині Telegram WebApp)
-    if (webApp.MainButton) {
-      webApp.MainButton.setText("Почати");
-      webApp.MainButton.show();
-      webApp.MainButton.onClick(onClick);
-    }
+    tg.MainButton?.onClick?.(onClick);
 
     return () => {
-      try {
-        webApp.MainButton?.offClick?.(onClick);
-        webApp.MainButton?.hide?.();
-      } catch {}
+      tg.MainButton?.offClick?.(onClick);
+      tg.MainButton?.hide?.();
     };
   }, []);
 
+  const pillText =
+    status === "authing" ? "Підключення…" :
+    status === "ready" ? "Готово" :
+    status === "error" ? "Помилка" :
+    status === "not-telegram" ? "Відкрий у Telegram" :
+    " ";
+
+  const pillColor =
+    status === "ready" ? "rgba(46, 204, 113, 0.18)" :
+    status === "error" ? "rgba(231, 76, 60, 0.18)" :
+    "rgba(52, 152, 219, 0.18)";
+
   return (
-    <main style={{ padding: 16, display: "grid", gap: 10 }}>
-      <h1 style={{ margin: 0 }}>Creative Agent</h1>
-
-      <div style={{ fontSize: 12, opacity: 0.85, lineHeight: 1.4 }}>
-        <div>
-          <b>DEBUG</b>
+    <main style={styles.page}>
+      <header style={styles.header}>
+        <div style={styles.brandRow}>
+          <div style={styles.logo}>CA</div>
+          <div style={{ display: "grid", gap: 2 }}>
+            <h1 style={styles.title}>Creative Agent</h1>
+            <div style={styles.subtitle}>AI-агент для контенту та ідей у Telegram</div>
+          </div>
         </div>
-        <div>window.Telegram: {debug.hasTelegram ? "YES" : "NO"}</div>
-        <div>WebApp: {debug.hasWebApp ? "YES" : "NO"}</div>
-        <div>initData length: {debug.initDataLen}</div>
-        <div>auth: {debug.auth}</div>
-        <div>main button click: {debug.click}</div>
-      </div>
 
-      <p style={{ opacity: 0.7, fontSize: 12 }}>build: v-onboarding-20260112-1</p>
+        <div style={{ ...styles.pill, background: pillColor }}>
+          <span style={styles.pillDot} />
+          <span>{pillText}</span>
+        </div>
+      </header>
 
-      <p style={{ margin: 0 }}>
-        Якщо ти у Telegram, знизу має з’явитись кнопка “Почати”.
-      </p>
+      <section style={styles.cards}>
+        <FeatureCard
+          title="Пости за 30 секунд"
+          desc="Ідеї, структура, CTA — під Instagram / Telegram / LinkedIn."
+        />
+        <FeatureCard
+          title="Пакети контенту"
+          desc="Серії постів, рубрики, план на тиждень/місяць."
+        />
+        <FeatureCard
+          title="Тон і стиль"
+          desc="Під твій бренд: коротко, експертно або більш “лайтово”."
+        />
+      </section>
 
-      <p style={{ margin: 0, opacity: 0.8 }}>
-        Якщо initData length = 0, відкрий Mini App саме через бота (кнопка в чаті / direct link
-        з <code>?startapp=...</code>).
-      </p>
+      <section style={styles.actions}>
+        <button
+          style={styles.secondaryBtn}
+          onClick={() => (window.location.href = `${window.location.origin}/paywall`)}
+        >
+          ⭐ PRO
+        </button>
 
-      {/* Тимчасовий fallback для тестів */}
-      <button
-        onClick={() => (window.location.href = `${window.location.origin}/dashboard`)}
-        style={{ padding: 12, width: "100%" }}
-      >
-        Почати (fallback)
-      </button>
+        {status === "not-telegram" && (
+          <div style={styles.helper}>
+            Відкрий Mini App через бота або через direct link з <code>?startapp=...</code>.
+          </div>
+        )}
+
+        {status === "error" && (
+          <div style={styles.helper}>
+            Не вдалося підтвердити сесію. Закрий Mini App і відкрий знову через бота.
+          </div>
+        )}
+
+        {status === "ready" && (
+          <div style={styles.helper}>
+            Натисни кнопку <b>“Почати”</b> внизу (Telegram MainButton).
+          </div>
+        )}
+
+        {status === "authing" && (
+          <div style={styles.helper}>
+            Перевіряємо Telegram… це займає 1–2 секунди.
+          </div>
+        )}
+      </section>
+
+      <footer style={styles.footer}>
+        <span style={{ opacity: 0.65 }}>© {new Date().getFullYear()} Creative Agent</span>
+      </footer>
     </main>
   );
 }
+
+function FeatureCard({ title, desc }: { title: string; desc: string }) {
+  return (
+    <div style={styles.card}>
+      <div style={styles.cardTitle}>{title}</div>
+      <div style={styles.cardDesc}>{desc}</div>
+    </div>
+  );
+}
+
+const styles: Record<string, React.CSSProperties> = {
+  page: {
+    minHeight: "100vh",
+    background: "radial-gradient(1200px 600px at 20% 0%, rgba(46, 204, 113, 0.12), transparent 60%), radial-gradient(900px 500px at 90% 10%, rgba(52, 152, 219, 0.16), transparent 55%), #0b0f14",
+    color: "rgba(255,255,255,0.92)",
+    padding: 20,
+    display: "grid",
+    gap: 16,
+    alignContent: "start",
+  },
+  header: {
+    display: "flex",
+    justifyContent: "space-between",
+    gap: 12,
+    alignItems: "flex-start",
+    flexWrap: "wrap",
+  },
+  brandRow: {
+    display: "flex",
+    gap: 12,
+    alignItems: "center",
+  },
+  logo: {
+    width: 44,
+    height: 44,
+    borderRadius: 14,
+    display: "grid",
+    placeItems: "center",
+    fontWeight: 800,
+    letterSpacing: 0.5,
+    background: "rgba(255,255,255,0.08)",
+    border: "1px solid rgba(255,255,255,0.10)",
+  },
+  title: {
+    margin: 0,
+    fontSize: 20,
+    fontWeight: 800,
+    lineHeight: 1.1,
+  },
+  subtitle: {
+    fontSize: 12,
+    opacity: 0.75,
+    lineHeight: 1.3,
+  },
+  pill: {
+    display: "inline-flex",
+    alignItems: "center",
+    gap: 8,
+    padding: "8px 10px",
+    borderRadius: 999,
+    border: "1px solid rgba(255,255,255,0.10)",
+    fontSize: 12,
+    opacity: 0.9,
+  },
+  pillDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 999,
+    background: "rgba(255,255,255,0.85)",
+  },
+  cards: {
+    display: "grid",
+    gap: 10,
+  },
+  card: {
+    borderRadius: 18,
+    background: "rgba(255,255,255,0.06)",
+    border: "1px solid rgba(255,255,255,0.10)",
+    padding: 14,
+  },
+  cardTitle: {
+    fontWeight: 800,
+    fontSize: 14,
+    marginBottom: 6,
+  },
+  cardDesc: {
+    fontSize: 13,
+    lineHeight: 1.35,
+    opacity: 0.8,
+  },
+  actions: {
+    display: "grid",
+    gap: 10,
+  },
+  secondaryBtn: {
+    width: "100%",
+    padding: 12,
+    borderRadius: 14,
+    border: "1px solid rgba(255,255,255,0.14)",
+    background: "rgba(255,255,255,0.08)",
+    color: "rgba(255,255,255,0.92)",
+    fontWeight: 800,
+    fontSize: 14,
+  },
+  helper: {
+    fontSize: 12,
+    opacity: 0.75,
+    lineHeight: 1.35,
+  },
+  footer: {
+    marginTop: 6,
+    fontSize: 12,
+    textAlign: "center",
+  },
+};
+
 
