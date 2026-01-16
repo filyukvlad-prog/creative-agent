@@ -1,117 +1,155 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useMemo, useState } from "react";
+import { useRouter } from "next/navigation";
 
 export default function ResultPage() {
-  const [text, setText] = useState("");
+  const router = useRouter();
 
-  useEffect(() => {
-    setText(sessionStorage.getItem("ca_last_result") || "");
+  const initial = useMemo(() => {
+    const text = sessionStorage.getItem("ca_last_result") || "";
+    const payloadStr = sessionStorage.getItem("ca_last_payload") || "{}";
+    let payload: any = {};
+    try {
+      payload = JSON.parse(payloadStr);
+    } catch {}
+    return { text, payload };
   }, []);
 
-  const copy = async () => {
+  const [text, setText] = useState(initial.text);
+  const [loading, setLoading] = useState(false);
+  const [msg, setMsg] = useState<string>("");
+
+  async function copy() {
     try {
       await navigator.clipboard.writeText(text);
-      const tg = (window as any).Telegram?.WebApp;
-      tg?.showToast?.("Скопійовано") || tg?.showPopup?.({ message: "Скопійовано", buttons: [{ type: "ok" }] });
+      setMsg("Скопійовано ✅");
+      setTimeout(() => setMsg(""), 1200);
     } catch {
-      // ignore
+      setMsg("Не вдалося скопіювати");
+      setTimeout(() => setMsg(""), 1200);
     }
-  };
+  }
+
+  async function regenerate() {
+    setMsg("");
+    setLoading(true);
+    try {
+      const r = await fetch("/api/ai/generate", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ ...(initial.payload || {}), nonce: Date.now() }),
+      });
+      const data = await r.json().catch(() => ({}));
+      if (!r.ok || !data?.ok) throw new Error(data?.error || `Помилка (${r.status})`);
+
+      const next = String(data.text || "");
+      if (!next) throw new Error("Порожня відповідь від AI.");
+
+      setText(next);
+      sessionStorage.setItem("ca_last_result", next);
+      setMsg("Оновлено ✅");
+      setTimeout(() => setMsg(""), 1200);
+    } catch (e: any) {
+      setMsg(String(e?.message || e));
+    } finally {
+      setLoading(false);
+    }
+  }
 
   return (
-    <main style={styles.page}>
-      <header style={styles.header}>
-        <div style={styles.brandRow}>
-          <div style={styles.logo}>CA</div>
-          <div style={{ display: "grid", gap: 2 }}>
-            <h1 style={styles.title}>Результат</h1>
-            <div style={styles.subtitle}>Готово. Можеш відредагувати і скопіювати.</div>
-          </div>
-        </div>
-      </header>
+    <div style={{ display: "grid", gap: 14 }}>
+      <div style={card}>
+        <h2 style={h2}>Готово 🚀</h2>
+        <p style={muted}>Ось твій контент. Можеш одразу копіювати.</p>
+      </div>
 
-      <section style={styles.card}>
-        <textarea style={styles.textarea} value={text} onChange={(e) => setText(e.target.value)} />
+      <div style={card}>
+        <div style={resultBox}>{text || "Немає тексту. Повернись і згенеруй пост."}</div>
 
-        <button style={styles.primaryBtn} onClick={copy} disabled={!text}>
-          Copy
+        {msg ? <div style={info}>{msg}</div> : null}
+
+        <button style={primaryBtn} onClick={copy} disabled={!text}>
+          📋 Копіювати
         </button>
 
-        <button
-          style={styles.secondaryBtn}
-          onClick={() => (window.location.href = `${window.location.origin}/generate`)}
-        >
-          ← Назад до генерації
+        <button style={{ ...ghostBtn, opacity: loading ? 0.6 : 1 }} onClick={regenerate} disabled={loading}>
+          🔁 Перегенерувати
         </button>
-      </section>
-    </main>
+
+        <button style={proBtn} onClick={() => alert("PRO у розробці")}>
+          ⭐ Отримати PRO
+        </button>
+
+        <button style={ghostBtn} onClick={() => router.push("/dashboard")}>
+          🏠 На головну
+        </button>
+      </div>
+    </div>
   );
 }
 
-const styles: Record<string, React.CSSProperties> = {
-  page: {
-    minHeight: "100vh",
-    background:
-      "radial-gradient(1200px 600px at 20% 0%, rgba(46, 204, 113, 0.10), transparent 60%), radial-gradient(900px 500px at 90% 10%, rgba(52, 152, 219, 0.16), transparent 55%), #0b0f14",
-    color: "rgba(255,255,255,0.92)",
-    padding: 20,
-    display: "grid",
-    gap: 16,
-    alignContent: "start",
-  },
-  header: { display: "flex", gap: 12, alignItems: "center" },
-  brandRow: { display: "flex", gap: 12, alignItems: "center" },
-  logo: {
-    width: 44,
-    height: 44,
-    borderRadius: 14,
-    display: "grid",
-    placeItems: "center",
-    fontWeight: 900,
-    background: "rgba(255,255,255,0.08)",
-    border: "1px solid rgba(255,255,255,0.10)",
-  },
-  title: { margin: 0, fontSize: 20, fontWeight: 900, lineHeight: 1.1 },
-  subtitle: { fontSize: 12, opacity: 0.75, lineHeight: 1.3 },
-  card: {
-    borderRadius: 18,
-    background: "rgba(255,255,255,0.06)",
-    border: "1px solid rgba(255,255,255,0.10)",
-    padding: 14,
-    display: "grid",
-    gap: 10,
-  },
-  textarea: {
-    minHeight: 340,
-    padding: 12,
-    borderRadius: 14,
-    border: "1px solid rgba(255,255,255,0.14)",
-    background: "rgba(255,255,255,0.06)",
-    color: "rgba(255,255,255,0.92)",
-    outline: "none",
-    resize: "vertical",
-    lineHeight: 1.4,
-  },
-  primaryBtn: {
-    width: "100%",
-    padding: 12,
-    borderRadius: 14,
-    border: "1px solid rgba(255,255,255,0.16)",
-    background: "rgba(255,255,255,0.14)",
-    color: "rgba(255,255,255,0.95)",
-    fontWeight: 950,
-    fontSize: 14,
-  },
-  secondaryBtn: {
-    width: "100%",
-    padding: 12,
-    borderRadius: 14,
-    border: "1px solid rgba(255,255,255,0.14)",
-    background: "rgba(255,255,255,0.08)",
-    color: "rgba(255,255,255,0.92)",
-    fontWeight: 900,
-    fontSize: 14,
-  },
+/* ===== styles ===== */
+
+const card: React.CSSProperties = {
+  borderRadius: 18,
+  background: "rgba(255,255,255,0.06)",
+  border: "1px solid rgba(255,255,255,0.10)",
+  padding: 14,
+};
+
+const h2: React.CSSProperties = { margin: 0, fontSize: 18, fontWeight: 900 };
+const muted: React.CSSProperties = { marginTop: 6, fontSize: 13, opacity: 0.75 };
+
+const resultBox: React.CSSProperties = {
+  borderRadius: 18,
+  border: "1px solid rgba(255,255,255,0.10)",
+  background: "rgba(0,0,0,0.25)",
+  padding: 14,
+  fontSize: 14,
+  lineHeight: 1.45,
+  whiteSpace: "pre-wrap",
+};
+
+const info: React.CSSProperties = {
+  marginTop: 10,
+  fontSize: 12,
+  opacity: 0.8,
+};
+
+const primaryBtn: React.CSSProperties = {
+  marginTop: 12,
+  width: "100%",
+  padding: 14,
+  borderRadius: 16,
+  border: "1px solid rgba(46,204,113,0.35)",
+  background: "linear-gradient(180deg, rgba(46,204,113,0.25), rgba(46,204,113,0.10))",
+  color: "rgba(255,255,255,0.92)",
+  fontWeight: 900,
+  cursor: "pointer",
+};
+
+const ghostBtn: React.CSSProperties = {
+  marginTop: 10,
+  width: "100%",
+  padding: 12,
+  borderRadius: 16,
+  border: "1px solid rgba(255,255,255,0.10)",
+  background: "transparent",
+  color: "rgba(255,255,255,0.80)",
+  fontWeight: 800,
+  cursor: "pointer",
+};
+
+const proBtn: React.CSSProperties = {
+  marginTop: 10,
+  width: "100%",
+  padding: 12,
+  borderRadius: 16,
+  border: "1px solid rgba(255,215,0,0.35)",
+  background: "rgba(255,215,0,0.10)",
+  color: "rgba(255,255,255,0.92)",
+  fontWeight: 900,
+  cursor: "pointer",
 };
 

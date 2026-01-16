@@ -29,18 +29,30 @@ export default function PaywallPage() {
     tg.MainButton?.setText?.("Оформити PRO");
     tg.MainButton?.show?.();
 
-    const onClick = () => {
-      // Поки що — демо. Потім підключимо оплату (Telegram Payments/Stripe)
-      tg.MainButton?.showProgress?.();
-      setTimeout(() => {
-        tg.MainButton?.hideProgress?.();
-        tg.showPopup?.({
-          title: "PRO (Demo)",
-          message: "Платіжний флоу підключимо наступним кроком.",
-          buttons: [{ type: "ok" }],
-        });
-      }, 450);
-    };
+const onClick = async () => {
+  try {
+    tg.MainButton?.showProgress?.();
+
+    const r = await fetch("/api/billing/create-invoice", { method: "POST" });
+    const data = await r.json();
+
+    if (!r.ok || !data?.ok) throw new Error(data?.error || "Failed to create invoice");
+
+    // Відкриває системне вікно оплати в Telegram WebApp :contentReference[oaicite:6]{index=6}
+    tg.openInvoice?.(data.invoiceLink, (status: string) => {
+      // status: "paid" | "cancelled" | "failed" (залежить від клієнта)
+      console.log("invoice status:", status);
+    });
+  } catch (e) {
+    tg.showPopup?.({
+      title: "Payment error",
+      message: String(e),
+      buttons: [{ type: "ok" }],
+    });
+  } finally {
+    tg.MainButton?.hideProgress?.();
+  }
+};
 
     tg.MainButton?.onClick?.(onClick);
 

@@ -1,23 +1,9 @@
-import "./globals.css";
+import type { ReactNode } from "react";
 
-export const metadata = {
-  title: "Creative Agent",
-  description: "Telegram Mini App"
-};
-
-export default function RootLayout({
-  children
-}: {
-  children: React.ReactNode;
-}) {
+export default function RootLayout({ children }: { children: ReactNode }) {
   return (
-    <html lang="uk" suppressHydrationWarning>
-      <head>
-        <script src="https://telegram.org/js/telegram-web-app.js" />
-      </head>
-      <body>{children}</body>
+    <html lang="uk">
+      <body style={{ margin: 0 }}>{children}</body>
     </html>
   );
 }
-
-
